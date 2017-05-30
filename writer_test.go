@@ -1,4 +1,5 @@
 /* 
+Copyright (c) 2017 Jerry Jacobs <jerry.jacobs@xor-gate.org>
 Copyright (c) 2013 Blake Smith <blakesmith0@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -22,6 +23,7 @@ THE SOFTWARE.
 package ar
 
 import (
+	"io"
 	"bytes"
 	"io/ioutil"
 	"os"
@@ -88,5 +90,37 @@ func TestWriteTooLong(t *testing.T) {
 	_, err := writer.Write([]byte(body))
 	if err != ErrWriteTooLong {
 		t.Errorf("Error should have been: %s", ErrWriteTooLong)
+	}
+}
+
+func TestIoCopyWithPadding(t *testing.T) {
+	hdr := new(Header)
+	hdr.Size = 1
+
+	var arbuf bytes.Buffer
+
+	inbuf := bytes.NewBuffer([]byte("1"))
+
+	writer := NewWriter(&arbuf)
+	writer.WriteHeader(hdr)
+	_, err := io.Copy(writer, inbuf)
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err)
+	}
+}
+
+func TestIoCopyWithoutPadding(t *testing.T) {
+	hdr := new(Header)
+	hdr.Size = 2
+
+	var arbuf bytes.Buffer
+
+	inbuf := bytes.NewBuffer([]byte("12"))
+
+	writer := NewWriter(&arbuf)
+	writer.WriteHeader(hdr)
+	_, err := io.Copy(writer, inbuf)
+	if err != nil {
+		t.Errorf("Unexpected error: %s", err)
 	}
 }
