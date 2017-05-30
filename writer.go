@@ -1,4 +1,5 @@
 /* 
+Copyright (c) 2017 Jerry Jacobs <jerry.jacobs@xor-gate.org>
 Copyright (c) 2013 Blake Smith <blakesmith0@gmail.com>
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -91,8 +92,11 @@ func (aw *Writer) Write(b []byte) (n int, err error) {
 	}
 
 	if len(b)%2 == 1 { // data size must be aligned to an even byte
-		n2, _ := aw.w.Write([]byte{'\n'})
-		return n+n2, err
+		if _, err := aw.w.Write([]byte{'\n'}); err != nil {
+			// Return n although we actually wrote n+1 bytes.
+			// This is to make io.Copy() to work correctly.
+			return n, err
+		}
 	}
 
 	return
