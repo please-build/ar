@@ -150,9 +150,10 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 			aw.string(s.next(16), "/"+strconv.Itoa(idx))
 		} else {
 			// not known, assume they want BSD-style names.
-			aw.string(s.next(16), "#1/"+strconv.Itoa(len(hdr.Name)))
-			aw.nb += int64(len(hdr.Name))
-			hdr.Size += int64(len(hdr.Name))
+			aw.string(s.next(16), "#1/"+strconv.Itoa(len(hdr.Name)+2))
+			// These seem to pad with two nulls?
+			aw.nb += int64(len(hdr.Name)) + 2
+			hdr.Size += int64(len(hdr.Name)) + 2
 			writeBSDName = true
 		}
 	} else {
@@ -169,7 +170,7 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 
 	if err == nil && writeBSDName {
 		// BSD-style writes the name before the data section
-		_, err = aw.Write([]byte(hdr.Name))
+		_, err = aw.Write(append([]byte(hdr.Name), 0, 0))
 	}
 
 	return err

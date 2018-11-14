@@ -1,4 +1,4 @@
-/* 
+/*
 Copyright (c) 2017 Jerry Jacobs <jerry.jacobs@xor-gate.org>
 Copyright (c) 2013 Blake Smith <blakesmith0@gmail.com>
 
@@ -23,12 +23,14 @@ THE SOFTWARE.
 package ar
 
 import (
-	"io"
 	"bytes"
+	"io"
 	"io/ioutil"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestGlobalHeaderWrite(t *testing.T) {
@@ -123,4 +125,31 @@ func TestIoCopyWithoutPadding(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %s", err)
 	}
+}
+
+func TestWriteBSDFilename(t *testing.T) {
+	hdr := &Header{}
+	body := "test a file with a long filename\n"
+	hdr.ModTime = time.Unix(1542225207, 0)
+	hdr.Name = "test_long_filename.txt"
+	hdr.Size = int64(len(body))
+	hdr.Mode = 0644
+	hdr.Uid = 502
+	hdr.Gid = 0
+
+	var buf bytes.Buffer
+	writer := NewWriter(&buf)
+	writer.WriteGlobalHeader()
+	writer.WriteHeader(hdr)
+	_, err := writer.Write([]byte(body))
+	assert.NoError(t, err)
+
+	f, _ := os.Open("./fixtures/bsd_long_filename.a")
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
+	assert.NoError(t, err)
+
+	actual := buf.Bytes()
+	assert.Equal(t, b, actual)
 }
