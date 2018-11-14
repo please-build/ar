@@ -22,6 +22,7 @@ THE SOFTWARE.
 package ar
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"strconv"
@@ -45,12 +46,13 @@ var (
 // }
 // io.Copy(archive, data)
 type Writer struct {
-	w  io.Writer
-	nb int64 // number of unwritten bytes for the current file entry
+	w             io.Writer
+	nb            int64          // number of unwritten bytes for the current file entry
+	longFilenames map[string]int // content for the GNU long filenames entry (if needed)
 }
 
 // Create a new ar writer that writes to w
-func NewWriter(w io.Writer) *Writer { return &Writer{w: w} }
+func NewWriter(w io.Writer) *Writer { return &Writer{w: w, longFilenames: map[string]int{}} }
 
 func (aw *Writer) numeric(b []byte, x int64) {
 	s := strconv.FormatInt(x, 10)
@@ -106,6 +108,32 @@ func (aw *Writer) WriteGlobalHeader() error {
 	return err
 }
 
+// WriteGlobalHeaderForLongFiles writes the global header, and any GNU-style entries to handle
+// "long" filenames (i.e. ones over 16 chars).
+// If you do not call this (and just call WriteGlobalHeader) then long filenames will not work later.
+func (aw *Writer) WriteGlobalHeaderForLongFiles(filenames []string) error {
+	if err := aw.WriteGlobalHeader(); err != nil {
+		return err
+	}
+	var data []byte
+	for _, filename := range filenames {
+		if len(filename) >= 16 {
+			aw.longFilenames[filename] = len(data)
+			data = append(data, []byte(filename)...)
+			data = append(data, '\n')
+		}
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	// need at least one long filename
+	if err := aw.WriteHeader(&Header{Name: "//", Mode: 0420, Size: int64(len(data))}); err != nil {
+		return err
+	}
+	_, err := io.Copy(aw, bytes.NewReader(data))
+	return err
+}
+
 // Writes the header to the underlying writer and prepares
 // to receive the file payload
 func (aw *Writer) WriteHeader(hdr *Header) error {
@@ -113,7 +141,15 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	header := make([]byte, HEADER_BYTE_SIZE)
 	s := slicer(header)
 
-	aw.string(s.next(16), hdr.Name)
+	if len(hdr.Name) >= 16 {
+		idx, present := aw.longFilenames[hdr.Name]
+		if !present {
+			return errors.New("filename " + hdr.Name + " exceeds max length; call WriteGlobalHeaderForLongFiles before beginning")
+		}
+		aw.string(s.next(16), "/"+strconv.Itoa(idx))
+	} else {
+		aw.string(s.next(16), hdr.Name)
+	}
 	aw.numeric(s.next(12), hdr.ModTime.Unix())
 	aw.numeric(s.next(6), int64(hdr.Uid))
 	aw.numeric(s.next(6), int64(hdr.Gid))
