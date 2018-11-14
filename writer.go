@@ -110,7 +110,8 @@ func (aw *Writer) WriteGlobalHeader() error {
 
 // WriteGlobalHeaderForLongFiles writes the global header, and any GNU-style entries to handle
 // "long" filenames (i.e. ones over 16 chars).
-// If you do not call this (and just call WriteGlobalHeader) then long filenames will not work later.
+// If you do not call this (and just call WriteGlobalHeader) then long filenames will be written
+// in BSD style later on.
 func (aw *Writer) WriteGlobalHeaderForLongFiles(filenames []string) error {
 	if err := aw.WriteGlobalHeader(); err != nil {
 		return err
@@ -141,12 +142,19 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	header := make([]byte, HEADER_BYTE_SIZE)
 	s := slicer(header)
 
+	writeBSDName := false
 	if len(hdr.Name) >= 16 {
 		idx, present := aw.longFilenames[hdr.Name]
-		if !present {
-			return errors.New("filename " + hdr.Name + " exceeds max length; call WriteGlobalHeaderForLongFiles before beginning")
+		if present {
+			// already known, write GNU-style name
+			aw.string(s.next(16), "/"+strconv.Itoa(idx))
+		} else {
+			// not known, assume they want BSD-style names.
+			aw.string(s.next(16), "#1/"+strconv.Itoa(len(hdr.Name)))
+			aw.nb += int64(len(hdr.Name))
+			hdr.Size += int64(len(hdr.Name))
+			writeBSDName = true
 		}
-		aw.string(s.next(16), "/"+strconv.Itoa(idx))
 	} else {
 		aw.string(s.next(16), hdr.Name)
 	}
@@ -158,6 +166,11 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	aw.string(s.next(2), "`\n")
 
 	_, err := aw.w.Write(header)
+
+	if err == nil && writeBSDName {
+		// BSD-style writes the name before the data section
+		_, err = aw.Write([]byte(hdr.Name))
+	}
 
 	return err
 }

@@ -27,6 +27,7 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -153,7 +154,11 @@ func (rd *Reader) Next() (*Header, error) {
 	}
 
 	hdr, err := rd.readHeader()
-	if err != nil || hdr.Name != "//" {
+	if err != nil {
+		return nil, err
+	} else if strings.HasPrefix(hdr.Name, "#1/") {
+		return hdr, rd.handleBSD(hdr)
+	} else if hdr.Name != "//" {
 		return hdr, err
 	}
 	// if we get here we have a GNU-style long file entry, read it.
@@ -163,6 +168,23 @@ func (rd *Reader) Next() (*Header, error) {
 	}
 	rd.longFilenames = buf.Bytes()
 	return rd.Next()
+}
+
+// handleBSD handles BSD-style long file names, which are stored on the front of the data section.
+func (rd *Reader) handleBSD(hdr *Header) error {
+	length, err := strconv.Atoi(hdr.Name[3:])
+	if err != nil {
+		return err
+	}
+	rd.nb += int64(length) // not accounted for originally
+	hdr.Size -= int64(length)
+	b := make([]byte, length)
+	if _, err := rd.Read(b); err != nil {
+		return err
+	}
+	// names are sometimes padded out with nulls
+	hdr.Name = string(bytes.TrimRightFunc(b, func(r rune) bool { return r == 0 }))
+	return nil
 }
 
 // Read reads data from the current entry in the archive.
