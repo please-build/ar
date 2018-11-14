@@ -176,7 +176,6 @@ func (rd *Reader) handleBSD(hdr *Header) error {
 	if err != nil {
 		return err
 	}
-	rd.nb += int64(length) // not accounted for originally
 	hdr.Size -= int64(length)
 	b := make([]byte, length)
 	if _, err := rd.Read(b); err != nil {

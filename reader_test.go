@@ -27,6 +27,8 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestReadHeader(t *testing.T) {
@@ -110,4 +112,21 @@ func TestReadMulti(t *testing.T) {
 	if !bytes.Equal(expected, actual) {
 		t.Errorf("Concatted byte buffer should be %s but is %s", expected, actual)
 	}
+}
+
+func TestBSDFilename(t *testing.T) {
+	f, err := os.Open("./fixtures/bsd_long_filename.a")
+	assert.NoError(t, err)
+	defer f.Close()
+	reader := NewReader(f)
+	var buf bytes.Buffer
+	hdr, err := reader.Next()
+	assert.NoError(t, err)
+	assert.Equal(t, "test_long_filename.txt", hdr.Name)
+	assert.EqualValues(t, 33, hdr.Size)
+	io.Copy(&buf, reader)
+	expected := []byte("test a file with a long filename\n")
+	assert.EqualValues(t, hdr.Size, len(expected))
+	actual := buf.Bytes()
+	assert.Equal(t, expected, actual)
 }
