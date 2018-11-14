@@ -22,6 +22,7 @@ THE SOFTWARE.
 package ar
 
 import (
+	"bytes"
 	"io"
 	"io/ioutil"
 	"os"
@@ -31,6 +32,8 @@ import (
 
 // Reader provides read access to an ar archive.
 // Call next to skip files.
+//
+// N.B. This understands the GNU-style long file entries and will transparently decode them.
 //
 // Example:
 //
@@ -47,9 +50,10 @@ import (
 //         io.Copy(&buf, reader)
 //     }
 type Reader struct {
-	r   io.Reader
-	nb  int64
-	pad int64
+	r             io.Reader
+	nb            int64
+	pad           int64
+	longFilenames []byte
 }
 
 // NewReader creates a new reader reading from r. It strips the global ar header.
@@ -125,6 +129,17 @@ func (rd *Reader) readHeader() (*Header, error) {
 		rd.pad = 0
 	}
 
+	// Handle long filenames
+	if header.Name[0] == '/' && rd.longFilenames != nil {
+		if offset, err := strconv.Atoi(header.Name[1:]); err == nil {
+			data := rd.longFilenames[offset:]
+			if idx := bytes.IndexByte(data, '\n'); idx != -1 {
+				data = data[:idx]
+			}
+			header.Name = string(data)
+		}
+	}
+
 	return header, nil
 }
 
@@ -137,7 +152,17 @@ func (rd *Reader) Next() (*Header, error) {
 		return nil, err
 	}
 
-	return rd.readHeader()
+	hdr, err := rd.readHeader()
+	if err != nil || hdr.Name != "//" {
+		return hdr, err
+	}
+	// if we get here we have a GNU-style long file entry, read it.
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, rd); err != nil {
+		return nil, err
+	}
+	rd.longFilenames = buf.Bytes()
+	return rd.Next()
 }
 
 // Read reads data from the current entry in the archive.
