@@ -142,7 +142,7 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	header := make([]byte, HEADER_BYTE_SIZE)
 	s := slicer(header)
 
-	writeBSDName := false
+	var bsdName []byte
 	if len(hdr.Name) >= 16 {
 		idx, present := aw.longFilenames[hdr.Name]
 		if present {
@@ -150,11 +150,14 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 			aw.string(s.next(16), "/"+strconv.Itoa(idx))
 		} else {
 			// not known, assume they want BSD-style names.
-			aw.string(s.next(16), "#1/"+strconv.Itoa(len(hdr.Name)+2))
+			bsdName = append([]byte(hdr.Name), 0, 0) // seems to pad with at least two nulls
+			if len(bsdName)%2 != 0 {
+				bsdName = append(bsdName, 0) // pad out to an even number
+			}
+			aw.string(s.next(16), "#1/"+strconv.Itoa(len(bsdName)))
 			// These seem to pad with two nulls?
-			aw.nb += int64(len(hdr.Name)) + 2
-			hdr.Size += int64(len(hdr.Name)) + 2
-			writeBSDName = true
+			aw.nb += int64(len(bsdName))
+			hdr.Size += int64(len(bsdName))
 		}
 	} else {
 		aw.string(s.next(16), hdr.Name)
@@ -168,9 +171,9 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 
 	_, err := aw.w.Write(header)
 
-	if err == nil && writeBSDName {
+	if err == nil && bsdName != nil {
 		// BSD-style writes the name before the data section
-		_, err = aw.Write(append([]byte(hdr.Name), 0, 0))
+		_, err = aw.Write(bsdName)
 	}
 
 	return err

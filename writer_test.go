@@ -153,3 +153,31 @@ func TestWriteBSDFilename(t *testing.T) {
 	actual := buf.Bytes()
 	assert.Equal(t, b, actual)
 }
+
+func TestWriteBSDFilename2(t *testing.T) {
+	body, err := ioutil.ReadFile("./fixtures/XmlTestReporter.o")
+	assert.NoError(t, err)
+	hdr := &Header{}
+	hdr.ModTime = time.Unix(1542271382, 0)
+	hdr.Name = "XmlTestReporter.o"
+	hdr.Size = int64(len(body))
+	hdr.Mode = 0644
+	hdr.Uid = 502
+	hdr.Gid = 0
+
+	var buf bytes.Buffer
+	writer := NewWriter(&buf)
+	writer.WriteGlobalHeader()
+	writer.WriteHeader(hdr)
+	_, err = writer.Write(body)
+	assert.NoError(t, err)
+
+	f, _ := os.Open("./fixtures/bsd_long_filename_2.a")
+	defer f.Close()
+
+	b, err := ioutil.ReadAll(f)
+	assert.NoError(t, err)
+
+	actual := buf.Bytes()
+	assert.Equal(t, b, actual)
+}
