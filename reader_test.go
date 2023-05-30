@@ -23,8 +23,11 @@ package ar
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -123,13 +126,13 @@ func TestReadMulti(t *testing.T) {
 	}
 }
 
-func TestLongFilename(t *testing.T) {
+func TestLongFilenames(t *testing.T) {
 	for _, tc := range []struct {
 		Description string
 		ArchivePath string
 	}{
-		{"BSD format", "./fixtures/bsd_long_filename.a"},
-		{"GNU format", "./fixtures/gnu_long_filename.a"},
+		{"BSD format", "./fixtures/long_filenames_bsd.a"},
+		{"GNU format", "./fixtures/long_filenames_gnu.a"},
 	} {
 		t.Run(tc.Description, func(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
@@ -137,16 +140,22 @@ func TestLongFilename(t *testing.T) {
 			defer f.Close()
 			reader, err := NewReader(f)
 			assert.NoError(t, err)
-			var buf bytes.Buffer
+			for i := 1; i <= 20; i++ {
+				t.Run("File "+strconv.Itoa(i), func(t *testing.T) {
+					hdr, err := reader.Next()
+					assert.NoError(t, err)
+					var buf bytes.Buffer
+					assert.Equal(t, fmt.Sprintf("%d%s", i, strings.Repeat("x", i - len(strconv.Itoa(i)))), hdr.Name)
+					io.Copy(&buf, reader)
+					expected := []byte(fmt.Sprintf("The name of this file contains %d character(s).\n", i))
+					assert.EqualValues(t, hdr.Size, len(expected))
+					actual := buf.Bytes()
+					assert.Equal(t, expected, actual)
+				})
+			}
 			hdr, err := reader.Next()
-			assert.NoError(t, err)
-			assert.Equal(t, "test_long_filename.txt", hdr.Name)
-			assert.EqualValues(t, 33, hdr.Size)
-			io.Copy(&buf, reader)
-			expected := []byte("test a file with a long filename\n")
-			assert.EqualValues(t, hdr.Size, len(expected))
-			actual := buf.Bytes()
-			assert.Equal(t, expected, actual)
+			assert.Nil(t, hdr, "No files left to read")
+			assert.ErrorIs(t, err, io.EOF)
 		})
 	}
 }
