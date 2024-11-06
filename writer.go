@@ -118,7 +118,7 @@ func (aw *Writer) WriteGlobalHeaderForLongFiles(filenames []string) error {
 	}
 	var data []byte
 	for _, filename := range filenames {
-		if len(filename) >= 16 {
+		if len(filename) > 16 {
 			aw.longFilenames[filename] = len(data)
 			data = append(data, []byte(filename)...)
 			data = append(data, '/')
@@ -144,7 +144,7 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	s := slicer(header)
 
 	var bsdName []byte
-	if len(hdr.Name) >= 16 {
+	if len(hdr.Name) > 16 {
 		idx, present := aw.longFilenames[hdr.Name]
 		if present {
 			// already known, write GNU-style name
