@@ -23,12 +23,24 @@ package ar
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+)
+
+var (
+	// ErrMissingGlobalHeader indicates that an ar archive file is invalid because its global
+	// header is missing (i.e., because the file is shorter than 8 bytes).
+	ErrMissingGlobalHeader = errors.New("ar: missing global header")
+
+	// ErrInvalidGlobalHeader indicates that an ar archive file is invalid because its global
+	// header is malformed (i.e., not the string "!<arch>\n").
+	ErrInvalidGlobalHeader = errors.New("ar: invalid global header")
 )
 
 // Reader provides read access to an ar archive.
@@ -57,11 +69,20 @@ type Reader struct {
 	longFilenames []byte
 }
 
-// NewReader creates a new reader reading from r. It strips the global ar header.
-func NewReader(r io.Reader) *Reader {
-	io.CopyN(ioutil.Discard, r, 8) // Discard global header
-
-	return &Reader{r: r}
+// NewReader creates a new reader reading from r. It returns an error if the global archive
+// header is missing or malformed.
+func NewReader(r io.Reader) (*Reader, error) {
+	var hdr bytes.Buffer
+	if _, err := io.CopyN(&hdr, r, int64(len(GLOBAL_HEADER))); err != nil {
+		if errors.Is(err, io.EOF) {
+			return nil, ErrMissingGlobalHeader
+		}
+		return nil, fmt.Errorf("ar: %w", err)
+	}
+	if string(hdr.Bytes()) != GLOBAL_HEADER {
+		return nil, ErrInvalidGlobalHeader
+	}
+	return &Reader{r: r}, nil
 }
 
 func (rd *Reader) string(b []byte) string {

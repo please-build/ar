@@ -38,7 +38,10 @@ func TestReadHeader(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	reader := NewReader(f)
+	reader, err := NewReader(f)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 	header, err := reader.Next()
 	if err != nil {
 		t.Errorf(err.Error())
@@ -73,7 +76,10 @@ func TestReadBody(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	reader := NewReader(f)
+	reader, err := NewReader(f)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 	_, err = reader.Next()
 	if err != nil && err != io.EOF {
 		t.Errorf(err.Error())
@@ -95,7 +101,10 @@ func TestReadMulti(t *testing.T) {
 	if err != nil {
 		t.Errorf(err.Error())
 	}
-	reader := NewReader(f)
+	reader, err := NewReader(f)
+	if err != nil {
+		t.Errorf(err.Error())
+	}
 	var buf bytes.Buffer
 	for {
 		_, err := reader.Next()
@@ -126,7 +135,8 @@ func TestLongFilename(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
 			assert.NoError(t, err)
 			defer f.Close()
-			reader := NewReader(f)
+			reader, err := NewReader(f)
+			assert.NoError(t, err)
 			var buf bytes.Buffer
 			hdr, err := reader.Next()
 			assert.NoError(t, err)
