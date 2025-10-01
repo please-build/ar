@@ -1,4 +1,4 @@
-module github.com/peterebden/ar
+module github.com/please-build/ar
 
 go 1.19
 
