@@ -1,9 +1,7 @@
-on:
-  push:
-    branches:
-      - master
-  pull_request:
 name: Test
+on:
+  - push
+  - pull_request
 jobs:
   test:
     name: Run tests (Go ${{ matrix.go }})
