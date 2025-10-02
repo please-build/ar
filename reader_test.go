@@ -148,7 +148,7 @@ func TestLongFilenames(t *testing.T) {
 					assert.Equal(t, fmt.Sprintf("%d%s", i, strings.Repeat("x", i - len(strconv.Itoa(i)))), hdr.Name)
 					io.Copy(&buf, reader)
 					expected := []byte(fmt.Sprintf("The name of this file contains %d character(s).\n", i))
-					assert.EqualValues(t, hdr.Size, len(expected))
+					assert.Equal(t, hdr.Size, int64(len(expected)))
 					actual := buf.Bytes()
 					assert.Equal(t, expected, actual)
 				})

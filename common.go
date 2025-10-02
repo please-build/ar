@@ -30,6 +30,16 @@ const (
 	GLOBAL_HEADER = "!<arch>\n"
 )
 
+type Variant int
+
+const (
+	// BSD represents the variant of the ar file format used by BSD ar.
+	BSD Variant = iota
+
+	// GNU represents the variant of the ar file format used by GNU ar.
+	GNU
+)
+
 type Header struct {
 	Name string
 	ModTime time.Time
