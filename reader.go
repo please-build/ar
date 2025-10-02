@@ -157,8 +157,9 @@ func (rd *Reader) Next() (*Header, error) {
 		return nil, err
 	}
 
+	header := new(Header)
 	s := slicer(headerBuf)
-	header := &Header{}
+
 	header.Name = rd.string(s.next(16))
 	header.ModTime = time.Unix(rd.numeric(s.next(12)), 0)
 	header.Uid = int(rd.numeric(s.next(6)))
