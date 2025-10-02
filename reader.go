@@ -201,6 +201,10 @@ func (rd *Reader) Next() (*Header, error) {
 			return nil, err
 		}
 	case BSD:
+		// The special file name "__.SYMDEF" indicates that the data section contains a symbol table.
+		if header.Name == "__.SYMDEF" {
+			// The symbol table should be invisible to the caller - skip over it.
+			return rd.Next()
 		if err := rd.parseBSDFileName(header); err != nil {
 			return nil, err
 		}
