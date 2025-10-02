@@ -205,6 +205,7 @@ func (rd *Reader) Next() (*Header, error) {
 		if header.Name == "__.SYMDEF" {
 			// The symbol table should be invisible to the caller - skip over it.
 			return rd.Next()
+		}
 		if err := rd.parseBSDFileName(header); err != nil {
 			return nil, err
 		}
