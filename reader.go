@@ -22,31 +22,19 @@ THE SOFTWARE.
 package ar
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 )
 
-var (
-	// ErrMissingGlobalHeader indicates that an ar archive file is invalid because its global
-	// header is missing (i.e., because the file is shorter than 8 bytes).
-	ErrMissingGlobalHeader = errors.New("ar: missing global header")
-
-	// ErrInvalidGlobalHeader indicates that an ar archive file is invalid because its global
-	// header is malformed (i.e., not the string "!<arch>\n").
-	ErrInvalidGlobalHeader = errors.New("ar: invalid global header")
-)
-
 // Reader provides read access to an ar archive.
 // Call next to skip files.
-//
-// N.B. This understands the GNU-style long file entries and will transparently decode them.
 //
 // Example:
 //
@@ -63,17 +51,36 @@ var (
 //         io.Copy(&buf, reader)
 //     }
 type Reader struct {
-	r             io.Reader
-	nb            int64
-	pad           int64
-	longFilenames []byte
+	// r is the underlying archive file.
+	r *bufio.Reader
+
+	// variant is the variant of the ar file format used by the archive.
+	variant Variant
+
+	// nb is the number of bytes in the current data section that remain unread.
+	nb int64
+
+	// pad is the number of padding bytes appended to the current data section; it is always either 0
+	// or 1, depending on whether the length of the data section is an even or odd number of bytes
+	// respectively.
+	pad int64
+
+	// stringTable is the archive's string table, the data section of the special "//" file in the GNU
+	// variant of the archive format, which stores the names of files that are too long to fit in a
+	// file name header field.
+	stringTable []byte
 }
 
 // NewReader creates a new reader reading from r. It returns an error if the global archive
 // header is missing or malformed.
 func NewReader(r io.Reader) (*Reader, error) {
+	rd := &Reader{
+		r:       bufio.NewReader(r),
+		variant: BSD,
+	}
+	// Ensure the global archive header is valid.
 	var hdr bytes.Buffer
-	if _, err := io.CopyN(&hdr, r, int64(len(GLOBAL_HEADER))); err != nil {
+	if _, err := io.CopyN(&hdr, rd.r, int64(len(GLOBAL_HEADER))); err != nil {
 		if errors.Is(err, io.EOF) {
 			return nil, ErrMissingGlobalHeader
 		}
@@ -82,7 +89,20 @@ func NewReader(r io.Reader) (*Reader, error) {
 	if string(hdr.Bytes()) != GLOBAL_HEADER {
 		return nil, ErrInvalidGlobalHeader
 	}
-	return &Reader{r: r}, nil
+	// Peek at the file name in the archive's first header to determine whether the archive contains a
+	// symbol table and identify the file format variant in use. File names in the GNU variant either
+	// begin with "/" (special files, file names >= 16 bytes) or end with "/" (file names < 16 bytes);
+	// otherwise, assume the archive uses the BSD variant. (This means that empty archives are
+	// identified as using the BSD variant, which may not be true, but the distinction doesn't matter
+	// for an empty archive anyway.)
+	b, err := rd.r.Peek(16)
+	if err == nil { // Don't worry about I/O errors here; report them when the caller calls Next.
+		firstFile := rd.string(b)
+		if len(firstFile) > 0 && (firstFile[0] == '/' || firstFile[len(firstFile)-1] == '/') {
+			rd.variant = GNU
+		}
+	}
+	return rd, nil
 }
 
 func (rd *Reader) string(b []byte) string {
@@ -119,16 +139,19 @@ func (rd *Reader) octal(b []byte) int64 {
 func (rd *Reader) skipUnread() error {
 	skip := rd.nb + rd.pad
 	rd.nb, rd.pad = 0, 0
-	if seeker, ok := rd.r.(io.Seeker); ok {
-		_, err := seeker.Seek(skip, os.SEEK_CUR)
-		return err
-	}
-
 	_, err := io.CopyN(ioutil.Discard, rd.r, skip)
 	return err
 }
 
-func (rd *Reader) readHeader() (*Header, error) {
+// Next skips to the next file in the archive file.
+// Returns a Header which contains the metadata about the
+// file in the archive. io.EOF is returned at the end of the input.
+func (rd *Reader) Next() (*Header, error) {
+	err := rd.skipUnread()
+	if err != nil {
+		return nil, err
+	}
+
 	headerBuf := make([]byte, HEADER_BYTE_SIZE)
 	if _, err := io.ReadFull(rd.r, headerBuf); err != nil {
 		return nil, err
@@ -151,62 +174,120 @@ func (rd *Reader) readHeader() (*Header, error) {
 		rd.pad = 0
 	}
 
-	// Handle long filenames
-	if header.Name[0] == '/' && rd.longFilenames != nil {
-		if offset, err := strconv.Atoi(header.Name[1:]); err == nil {
-			data := rd.longFilenames[offset:]
-			if idx := bytes.IndexByte(data, '\n'); idx != -1 {
-				data = data[:idx]
+	switch rd.variant {
+	case GNU:
+		switch header.Name {
+		// The special file name "/" indicates that the data section contains a symbol table.
+		case "/":
+			// The symbol table should be invisible to the caller - skip over it.
+			return rd.Next()
+		// The special file name "//" indicates that the data section contains a string table. The string
+		// table contains the names of files in the archive that are >= 15 bytes long, delimited with
+		// newlines. Store it, so we can resolve long file names when we encounter them later.
+		case "//":
+			if rd.stringTable != nil {
+				return nil, &ErrStringTable{Err: errors.New("archive contains multiple string tables")}
 			}
-			if idx := bytes.IndexByte(data, '/'); idx != -1 {
-				data = data[:idx]
+			buf := make([]byte, rd.nb)
+			_, err := rd.Read(buf)
+			if err != nil {
+				return nil, &ErrStringTable{Err: err}
 			}
-			header.Name = string(data)
+			rd.stringTable = buf
+			// The string table should be invisible to the caller - return the header for the first real file
+			// in the archive.
+			return rd.Next()
+		}
+		if err := rd.parseGNUFileName(header); err != nil {
+			return nil, err
+		}
+	case BSD:
+		// The special file name "__.SYMDEF" indicates that the data section contains a symbol table.
+		if header.Name == "__.SYMDEF" {
+			// The symbol table should be invisible to the caller - skip over it.
+			return rd.Next()
+		}
+		if err := rd.parseBSDFileName(header); err != nil {
+			return nil, err
+		}
+	}
+
+	// The file name has now been resolved; make sure it doesn't contain any illegal characters.
+	if strings.Contains(header.Name, "/") {
+		return nil, &ErrFileName{
+			Name: header.Name,
+			Err:  errors.New("file name contains illegal '/'"),
 		}
 	}
 
 	return header, nil
 }
 
-// Next skips to the next file in the archive file.
-// Returns a Header which contains the metadata about the
-// file in the archive. io.EOF is returned at the end of the input.
-func (rd *Reader) Next() (*Header, error) {
-	err := rd.skipUnread()
-	if err != nil {
-		return nil, err
+func (rd *Reader) parseGNUFileName(header *Header) error {
+	if len(header.Name) == 0 {
+		return &ErrFileName{
+			Name: header.Name,
+			Err:  errors.New("zero-length file name"),
+		}
 	}
-
-	hdr, err := rd.readHeader()
-	if err != nil {
-		return nil, err
-	} else if strings.HasPrefix(hdr.Name, "#1/") {
-		return hdr, rd.handleBSD(hdr)
-	} else if hdr.Name != "//" {
-		return hdr, err
+	// A file name conisting of "/" followed by an integer indicates that this file has a long name
+	// that is stored in the archive's string table. The integer is the byte offset of the real file
+	// name in the string table.
+	if header.Name[0] == '/' {
+		if rd.stringTable == nil {
+			return &ErrFileName{
+				Name: header.Name,
+				Err:  errors.New("missing string table"),
+			}
+		}
+		start, err := strconv.Atoi(header.Name[1:])
+		if err != nil || start > len(rd.stringTable) {
+			return &ErrFileName{
+				Name: header.Name,
+				Err:  errors.New("invalid string table offset"),
+			}
+		}
+		tableEntry := rd.stringTable[start:]
+		end := bytes.IndexByte(tableEntry, '\n')
+		if end == -1 {
+			return &ErrStringTable{Err: errors.New("missing trailing newline")}
+		}
+		header.Name = string(tableEntry[:end])
 	}
-	// if we get here we have a GNU-style long file entry, read it.
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, rd); err != nil {
-		return nil, err
+	// GNU ar appends "/" to all file names, regardless of where they are stored.
+	if header.Name[len(header.Name)-1] != '/' {
+		return &ErrFileName{
+			Name: header.Name,
+			Err:  errors.New("file name is missing trailing '/'"),
+		}
 	}
-	rd.longFilenames = buf.Bytes()
-	return rd.Next()
+	header.Name = strings.TrimRight(header.Name, "/")
+	return nil
 }
 
-// handleBSD handles BSD-style long file names, which are stored on the front of the data section.
-func (rd *Reader) handleBSD(hdr *Header) error {
-	length, err := strconv.Atoi(hdr.Name[3:])
-	if err != nil {
-		return err
+func (rd *Reader) parseBSDFileName(header *Header) error {
+	// A file name consisting of "#1/" followed by an integer indicates that this file has a long name
+	// that is prepended to the file's data section. The integer is the length of the prepended data.
+	if strings.HasPrefix(header.Name, "#1/") {
+		length, err := strconv.Atoi(header.Name[3:])
+		if err != nil {
+			return &ErrFileName{
+				Name: header.Name,
+				Err:  errors.New("invalid long file name length"),
+			}
+		}
+		header.Size -= int64(length)
+		b := make([]byte, length)
+		if _, err := rd.Read(b); err != nil {
+			return &ErrFileName{
+				Name: header.Name,
+				Err:  err,
+			}
+		}
+		// Some implementations (e.g. llvm-ar) append an indeterminate number of trailing nulls to the
+		// prepended data, which should be stripped.
+		header.Name = string(bytes.TrimRight(b, "\x00"))
 	}
-	hdr.Size -= int64(length)
-	b := make([]byte, length)
-	if _, err := rd.Read(b); err != nil {
-		return err
-	}
-	// names are sometimes padded out with nulls
-	hdr.Name = string(bytes.TrimRightFunc(b, func(r rune) bool { return r == 0 }))
 	return nil
 }
 
