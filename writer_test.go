@@ -36,9 +36,7 @@ import (
 func TestGlobalHeaderWrite(t *testing.T) {
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	if err := writer.WriteGlobalHeader(); err != nil {
-		t.Errorf(err.Error())
-	}
+	writer.Close()
 
 	globalHeader := buf.Bytes()
 	expectedHeader := []byte("!<arch>\n")
@@ -59,12 +57,13 @@ func TestSimpleFile(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	writer.WriteGlobalHeader()
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
 	if err != nil {
 		t.Errorf(err.Error())
 	}
+	err = writer.Close()
+	assert.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/hello.a")
 	defer f.Close()
@@ -109,6 +108,8 @@ func TestIoCopyWithPadding(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %s", err)
 	}
+	err = writer.Close()
+	assert.NoError(t, err)
 }
 
 func TestIoCopyWithoutPadding(t *testing.T) {
@@ -125,6 +126,8 @@ func TestIoCopyWithoutPadding(t *testing.T) {
 	if err != nil {
 		t.Errorf("Unexpected error: %s", err)
 	}
+	err = writer.Close()
+	assert.NoError(t, err)
 }
 
 func TestWriteGNUFilename(t *testing.T) {
@@ -142,6 +145,8 @@ func TestWriteGNUFilename(t *testing.T) {
 	writer.WriteGlobalHeaderForLongFiles([]string{"test_long_filename.txt"})
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
+	assert.NoError(t, err)
+	err = writer.Close()
 	assert.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/gnu_long_filename.a")
@@ -166,9 +171,10 @@ func TestWriteBSDFilename(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	writer.WriteGlobalHeader()
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
+	assert.NoError(t, err)
+	err = writer.Close()
 	assert.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/bsd_long_filename.a")
@@ -194,9 +200,10 @@ func TestWriteBSDFilename2(t *testing.T) {
 
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	writer.WriteGlobalHeader()
 	writer.WriteHeader(hdr)
 	_, err = writer.Write(body)
+	assert.NoError(t, err)
+	err = writer.Close()
 	assert.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/bsd_long_filename_2.a")
