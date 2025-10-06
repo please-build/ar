@@ -24,6 +24,7 @@ package ar
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"strconv"
 )
@@ -38,7 +39,6 @@ var (
 //
 // Example:
 // archive := ar.NewWriter(writer)
-// archive.WriteGlobalHeader()
 // header := new(ar.Header)
 // header.Size = 15 // bytes
 // if err := archive.WriteHeader(header); err != nil {
@@ -46,13 +46,34 @@ var (
 // }
 // io.Copy(archive, data)
 type Writer struct {
-	w             io.Writer
-	nb            int64          // number of unwritten bytes for the current file entry
-	longFilenames map[string]int // content for the GNU long filenames entry (if needed)
+	// w is the underlying io.Writer to which the archive file is written.
+	w io.Writer
+
+	// closed is true if Close has been called on this Writer, or false if it has not.
+	closed bool
+
+	// wroteHeader is true if the archive header has been written to the underlying io.Writer, or
+	// false if it has not yet.
+	wroteHeader bool
+
+	// nb is the number of bytes that have not yet been written (via Write) since the most
+	// recent call to WriteHeader.
+	nb int64
+
+	// longFilenames is a map representation of the archive's string table, which maps archive
+	// members' file names that are over 15 bytes long to the byte offset of that file name within
+	// the string table. It is only effective for Writers that write GNU-format archives -
+	// BSD-style archives do not contain a string table.
+	longFilenames map[string]int
 }
 
-// Create a new ar writer that writes to w
-func NewWriter(w io.Writer) *Writer { return &Writer{w: w, longFilenames: map[string]int{}} }
+// NewWriter creates a new Writer that writes an ar archive to an underlying io.Writer.
+func NewWriter(w io.Writer) *Writer {
+	return &Writer{
+		w:             w,
+		longFilenames: map[string]int{},
+	}
+}
 
 func (aw *Writer) numeric(b []byte, x int64) {
 	s := strconv.FormatInt(x, 10)
@@ -78,6 +99,25 @@ func (aw *Writer) string(b []byte, str string) {
 	copy(b, []byte(s))
 }
 
+func (aw *Writer) write(p []byte) (int, error) {
+	if aw.closed {
+		return 0, errors.New("ar: write to closed writer")
+	}
+	aw.writeHeader()
+	return aw.w.Write(p)
+}
+
+// Close finishes writing the archive, ensuring that a valid archive header has been written even if
+// the archive contains no files. It does not close the underlying io.Writer.
+func (aw *Writer) Close() error {
+	if aw.closed {
+		return errors.New("ar: writer closed twice")
+	}
+	aw.writeHeader()
+	aw.closed = true
+	return nil
+}
+
 // Writes to the current entry in the ar archive
 // Returns ErrWriteTooLong if more than header.Size
 // bytes are written after a call to WriteHeader
@@ -86,14 +126,14 @@ func (aw *Writer) Write(b []byte) (n int, err error) {
 		b = b[0:aw.nb]
 		err = ErrWriteTooLong
 	}
-	n, werr := aw.w.Write(b)
+	n, werr := aw.write(b)
 	aw.nb -= int64(n)
 	if werr != nil {
 		return n, werr
 	}
 
 	if len(b)%2 == 1 { // data size must be aligned to an even byte
-		if _, err := aw.w.Write([]byte{'\n'}); err != nil {
+		if _, err := aw.write([]byte{'\n'}); err != nil {
 			// Return n although we actually wrote n+1 bytes.
 			// This is to make io.Copy() to work correctly.
 			return n, err
@@ -103,19 +143,23 @@ func (aw *Writer) Write(b []byte) (n int, err error) {
 	return
 }
 
-func (aw *Writer) WriteGlobalHeader() error {
-	_, err := aw.w.Write([]byte(GLOBAL_HEADER))
-	return err
+// writeHeader writes the ar header to the underlying io.Writer. This must only happen once, and must
+// be the first write operation on the io.Writer.
+func (aw *Writer) writeHeader() error {
+	if aw.wroteHeader {
+		return nil
+	}
+	aw.wroteHeader = true
+	_, err := aw.write([]byte(GLOBAL_HEADER))
+	if err != nil {
+		return fmt.Errorf("ar: write archive header: %w", err)
+	}
+	return nil
 }
 
-// WriteGlobalHeaderForLongFiles writes the global header, and any GNU-style entries to handle
-// "long" filenames (i.e. ones over 16 chars).
-// If you do not call this (and just call WriteGlobalHeader) then long filenames will be written
-// in BSD style later on.
+// WriteGlobalHeaderForLongFiles writes GNU-style entries to handle "long" filenames (i.e. ones over
+// 16 chars).
 func (aw *Writer) WriteGlobalHeaderForLongFiles(filenames []string) error {
-	if err := aw.WriteGlobalHeader(); err != nil {
-		return err
-	}
 	var data []byte
 	for _, filename := range filenames {
 		if len(filename) > 16 {
@@ -170,7 +214,7 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	aw.numeric(s.next(10), hdr.Size)
 	aw.string(s.next(2), "`\n")
 
-	_, err := aw.w.Write(header)
+	_, err := aw.write(header)
 
 	if err == nil && bsdName != nil {
 		// BSD-style writes the name before the data section
