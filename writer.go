@@ -182,7 +182,7 @@ func (aw *Writer) writeHeader() error {
 // effect if this Writer is writing a BSD-format archive.
 func (aw *Writer) WriteStringTable(filenames []string) error {
 	if aw.variant != GNU {
-		return nil
+		return errors.New("ar: wrote string table for BSD-variant archive")
 	}
 	if aw.wroteStringTable {
 		return errors.New("ar: wrote string table twice")
