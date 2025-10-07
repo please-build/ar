@@ -32,17 +32,18 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadHeader(t *testing.T) {
 	f, err := os.Open("./fixtures/hello.a")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	defer f.Close()
 
 	reader, err := NewReader(f)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	header, err := reader.Next()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, "hello.txt", header.Name)
 	assert.Equal(t, time.Unix(1361157466, 0), header.ModTime)
@@ -61,14 +62,14 @@ func TestLongFilenames(t *testing.T) {
 	} {
 		t.Run(tc.Description, func(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			defer f.Close()
 			reader, err := NewReader(f)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			for i := 1; i <= 20; i++ {
 				t.Run("File "+strconv.Itoa(i), func(t *testing.T) {
 					hdr, err := reader.Next()
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					var buf bytes.Buffer
 					assert.Equal(t, fmt.Sprintf("%d%s", i, strings.Repeat("x", i - len(strconv.Itoa(i)))), hdr.Name)
 					io.Copy(&buf, reader)

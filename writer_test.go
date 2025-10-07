@@ -30,12 +30,14 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestGlobalHeaderWrite(t *testing.T) {
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	writer.Close()
+	err = writer.Close()
+	require.NoError(t, err)
 	assert.Equal(t, []byte("!<arch>\n"), buf.Bytes())
 }
 
@@ -53,15 +55,15 @@ func TestSimpleFile(t *testing.T) {
 	writer := NewWriter(&buf)
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = writer.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/hello.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, b, buf.Bytes())
 }
 
@@ -93,15 +95,15 @@ func TestWriteGNUFilename(t *testing.T) {
 	writer.WriteGlobalHeaderForLongFiles([]string{"test_long_filename.txt"})
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = writer.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/gnu_long_filename.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	actual := buf.Bytes()
 	assert.Equal(t, b, actual)
@@ -121,15 +123,15 @@ func TestWriteBSDFilename(t *testing.T) {
 	writer := NewWriter(&buf)
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = writer.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/bsd_long_filename.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	actual := buf.Bytes()
 	assert.Equal(t, b, actual)
@@ -137,7 +139,7 @@ func TestWriteBSDFilename(t *testing.T) {
 
 func TestWriteBSDFilename2(t *testing.T) {
 	body, err := ioutil.ReadFile("./fixtures/XmlTestReporter.o")
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	hdr := &Header{}
 	hdr.ModTime = time.Unix(1542271382, 0)
 	hdr.Name = "XmlTestReporter.o"
@@ -150,15 +152,15 @@ func TestWriteBSDFilename2(t *testing.T) {
 	writer := NewWriter(&buf)
 	writer.WriteHeader(hdr)
 	_, err = writer.Write(body)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 	err = writer.Close()
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	f, _ := os.Open("./fixtures/bsd_long_filename_2.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
-	assert.NoError(t, err)
+	require.NoError(t, err)
 
 	actual := buf.Bytes()
 	assert.Equal(t, b, actual)
