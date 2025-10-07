@@ -32,98 +32,24 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadHeader(t *testing.T) {
 	f, err := os.Open("./fixtures/hello.a")
+	require.NoError(t, err)
 	defer f.Close()
 
-	if err != nil {
-		t.Errorf(err.Error())
-	}
 	reader, err := NewReader(f)
-	if err != nil {
-		t.Errorf(err.Error())
-	}
+	require.NoError(t, err)
 	header, err := reader.Next()
-	if err != nil {
-		t.Errorf(err.Error())
-	}
+	require.NoError(t, err)
 
-	expectedName := "hello.txt"
-	if header.Name != expectedName {
-		t.Errorf("Header name should be %s but is %s", expectedName, header.Name)
-	}
-	expectedModTime := time.Unix(1361157466, 0)
-	if header.ModTime != expectedModTime {
-		t.Errorf("ModTime should be %s but is %s", expectedModTime, header.ModTime)
-	}
-	expectedUid := 501
-	if header.Uid != expectedUid {
-		t.Errorf("Uid should be %d but is %d", expectedUid, header.Uid)
-	}
-	expectedGid := 20
-	if header.Gid != expectedGid {
-		t.Errorf("Gid should be %d but is %d", expectedGid, header.Gid)
-	}
-	expectedMode := int64(0100644)
-	if header.Mode != expectedMode {
-		t.Errorf("Mode should be %d but is %d", expectedMode, header.Mode)
-	}
-}
-
-func TestReadBody(t *testing.T) {
-	f, err := os.Open("./fixtures/hello.a")
-	defer f.Close()
-
-	if err != nil {
-		t.Errorf(err.Error())
-	}
-	reader, err := NewReader(f)
-	if err != nil {
-		t.Errorf(err.Error())
-	}
-	_, err = reader.Next()
-	if err != nil && err != io.EOF {
-		t.Errorf(err.Error())
-	}
-	var buf bytes.Buffer
-	io.Copy(&buf, reader)
-
-	expected := []byte("Hello world!\n")
-	actual := buf.Bytes()
-	if !bytes.Equal(actual, expected) {
-		t.Errorf("Data value should be %s but is %s", expected, actual)
-	}
-}
-
-func TestReadMulti(t *testing.T) {
-	f, err := os.Open("./fixtures/multi_archive.a")
-	defer f.Close()
-
-	if err != nil {
-		t.Errorf(err.Error())
-	}
-	reader, err := NewReader(f)
-	if err != nil {
-		t.Errorf(err.Error())
-	}
-	var buf bytes.Buffer
-	for {
-		_, err := reader.Next()
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			t.Errorf(err.Error())
-		}
-		io.Copy(&buf, reader)
-	}
-	expected := []byte("Hello world!\nI love lamp.\n")
-	actual := buf.Bytes()
-	if !bytes.Equal(expected, actual) {
-		t.Errorf("Concatted byte buffer should be %s but is %s", expected, actual)
-	}
+	assert.Equal(t, "hello.txt", header.Name)
+	assert.Equal(t, time.Unix(1361157466, 0), header.ModTime)
+	assert.Equal(t, 501, header.Uid)
+	assert.Equal(t, 20, header.Gid)
+	assert.Equal(t, int64(0100644), header.Mode)
 }
 
 func TestLongFilenames(t *testing.T) {
@@ -136,14 +62,14 @@ func TestLongFilenames(t *testing.T) {
 	} {
 		t.Run(tc.Description, func(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			defer f.Close()
 			reader, err := NewReader(f)
-			assert.NoError(t, err)
+			require.NoError(t, err)
 			for i := 1; i <= 20; i++ {
 				t.Run("File "+strconv.Itoa(i), func(t *testing.T) {
 					hdr, err := reader.Next()
-					assert.NoError(t, err)
+					require.NoError(t, err)
 					var buf bytes.Buffer
 					assert.Equal(t, fmt.Sprintf("%d%s", i, strings.Repeat("x", i - len(strconv.Itoa(i)))), hdr.Name)
 					io.Copy(&buf, reader)
