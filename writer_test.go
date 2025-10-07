@@ -24,10 +24,13 @@ package ar
 
 import (
 	"bytes"
-	"io/ioutil"
+	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -35,36 +38,10 @@ import (
 
 func TestGlobalHeaderWrite(t *testing.T) {
 	var buf bytes.Buffer
-	writer := NewWriter(&buf)
+	writer := NewWriter(&buf, GNU)
 	err := writer.Close()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("!<arch>\n"), buf.Bytes())
-}
-
-func TestSimpleFile(t *testing.T) {
-	hdr := new(Header)
-	body := "Hello world!\n"
-	hdr.ModTime = time.Unix(1361157466, 0)
-	hdr.Name = "hello.txt"
-	hdr.Size = int64(len(body))
-	hdr.Mode = 0644
-	hdr.Uid = 501
-	hdr.Gid = 20
-
-	var buf bytes.Buffer
-	writer := NewWriter(&buf)
-	writer.WriteHeader(hdr)
-	_, err := writer.Write([]byte(body))
-	require.NoError(t, err)
-	err = writer.Close()
-	require.NoError(t, err)
-
-	f, _ := os.Open("./test_data/hello.a")
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	require.NoError(t, err)
-	assert.Equal(t, b, buf.Bytes())
 }
 
 func TestWriteTooLong(t *testing.T) {
@@ -74,94 +51,110 @@ func TestWriteTooLong(t *testing.T) {
 	hdr.Size = 1
 
 	var buf bytes.Buffer
-	writer := NewWriter(&buf)
+	writer := NewWriter(&buf, GNU)
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
 	assert.ErrorIs(t, err, ErrWriteTooLong)
 }
 
-func TestWriteGNUFilename(t *testing.T) {
-	hdr := &Header{}
-	body := "test a file with a long filename\n"
-	hdr.ModTime = time.Unix(1542225207, 0)
-	hdr.Name = "test_long_filename.txt"
-	hdr.Size = int64(len(body))
-	hdr.Mode = 0644
-	hdr.Uid = 502
-	hdr.Gid = 0
+// TestWriteValidArchive ensures that the archive files written by Writer are capable of being read
+// by a range of third-party ar tools. Subsets of the test cases run in different CI environments
+// depending on the availability of the third-party ar tools on each runner type.
+func TestWriteValidArchive(t *testing.T) {
+	// CI=true is always set on GitHub runners.
+	// https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+	if os.Getenv("CI") != "true" {
+		t.Skip("CI-only test")
+	}
 
-	var buf bytes.Buffer
-	writer := NewWriter(&buf)
-	writer.WriteGlobalHeaderForLongFiles([]string{"test_long_filename.txt"})
-	writer.WriteHeader(hdr)
-	_, err := writer.Write([]byte(body))
-	require.NoError(t, err)
-	err = writer.Close()
-	require.NoError(t, err)
+	fileNames := make([]string, 20)
+	longFileNames := make([]string, 0)
+	for i := 1; i <= 20; i++ {
+		fileName := fmt.Sprintf("%d%s", i, strings.Repeat("x", i - len(strconv.Itoa(i))))
+		fileNames[i-1] = fileName
+		if len(fileName) > 15 {
+			longFileNames = append(longFileNames, fileName)
+		}
+	}
 
-	f, _ := os.Open("./test_data/gnu_long_filename.a")
-	defer f.Close()
+	for _, tc := range []struct {
+		Description string
+		ArPath      string
+		ArArgs      []string
+		Variant     Variant
+		Prereq      func(string) bool
+	}{
+		{
+			Description: "GNU ar",
+			ArPath:      "/usr/bin/ar",
+			ArArgs:      []string{},
+			Variant:     GNU,
+			Prereq:      func(os string) bool { return os == "Linux" },
+		},
+		{
+			Description: "llvm-ar in GNU mode",
+			ArPath:      "/usr/bin/llvm-ar-18",
+			ArArgs:      []string{"--format=gnu"},
+			Variant:     GNU,
+			Prereq:      func(os string) bool { return os == "Linux" },
+		},
+		{
+			Description: "llvm-ar in BSD mode",
+			ArPath:      "/usr/bin/llvm-ar-18",
+			ArArgs:      []string{"--format=bsd"},
+			Variant:     BSD,
+			Prereq:      func(os string) bool { return os == "Linux" },
+		},
+		{
+			Description: "macOS ar",
+			ArPath:      "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar",
+			ArArgs:      []string{},
+			Variant:     BSD,
+			Prereq:      func(os string) bool { return os == "macOS" },
+		},
+	} {
+		t.Run(tc.Description, func(t *testing.T) {
+			if !tc.Prereq(os.Getenv("RUNNER_OS")) {
+				t.Skip("prerequisites not met")
+			}
 
-	b, err := ioutil.ReadAll(f)
-	require.NoError(t, err)
+			tmp := filepath.Join(t.TempDir(), "test.a")
+			f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE, 0644)
+			require.NoError(t, err)
 
-	actual := buf.Bytes()
-	assert.Equal(t, b, actual)
-}
+			writer := NewWriter(f, tc.Variant)
+			if tc.Variant == GNU {
+				err = writer.WriteStringTable(longFileNames)
+			}
+			for i, fileName := range fileNames {
+				data := fmt.Sprintf("The name of this file contains %d character(s).\n", i+1)
+				err := writer.WriteHeader(&Header{
+					Name: fileName,
+					Mode: 0600,
+					Size: int64(len(data)),
+				})
+				require.NoError(t, err)
+				n, err := writer.Write([]byte(data))
+				assert.Equal(t, len(data), n)
+				require.NoError(t, err)
+			}
+			err = writer.Close()
+			require.NoError(t, err)
+			err = f.Close()
+			require.NoError(t, err)
 
-func TestWriteBSDFilename(t *testing.T) {
-	hdr := &Header{}
-	body := "test a file with a long filename\n"
-	hdr.ModTime = time.Unix(1542225207, 0)
-	hdr.Name = "test_long_filename.txt"
-	hdr.Size = int64(len(body))
-	hdr.Mode = 0644
-	hdr.Uid = 502
-	hdr.Gid = 0
+			cmd := exec.Command(tc.ArPath, append(tc.ArArgs, "-x", tmp)...)
+			err = cmd.Run()
+			require.NoError(t, err)
 
-	var buf bytes.Buffer
-	writer := NewWriter(&buf)
-	writer.WriteHeader(hdr)
-	_, err := writer.Write([]byte(body))
-	require.NoError(t, err)
-	err = writer.Close()
-	require.NoError(t, err)
-
-	f, _ := os.Open("./test_data/bsd_long_filename.a")
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	require.NoError(t, err)
-
-	actual := buf.Bytes()
-	assert.Equal(t, b, actual)
-}
-
-func TestWriteBSDFilename2(t *testing.T) {
-	body, err := ioutil.ReadFile("./test_data/XmlTestReporter.o")
-	require.NoError(t, err)
-	hdr := &Header{}
-	hdr.ModTime = time.Unix(1542271382, 0)
-	hdr.Name = "XmlTestReporter.o"
-	hdr.Size = int64(len(body))
-	hdr.Mode = 0644
-	hdr.Uid = 502
-	hdr.Gid = 0
-
-	var buf bytes.Buffer
-	writer := NewWriter(&buf)
-	writer.WriteHeader(hdr)
-	_, err = writer.Write(body)
-	require.NoError(t, err)
-	err = writer.Close()
-	require.NoError(t, err)
-
-	f, _ := os.Open("./test_data/bsd_long_filename_2.a")
-	defer f.Close()
-
-	b, err := ioutil.ReadAll(f)
-	require.NoError(t, err)
-
-	actual := buf.Bytes()
-	assert.Equal(t, b, actual)
+			for i, fileName := range fileNames {
+				fi, err := os.Stat(fileName)
+				require.NoError(t, err)
+				assert.EqualValues(t, 0600, fi.Mode().Perm())
+				f, err := os.ReadFile(fileName)
+				require.NoError(t, err)
+				assert.Equal(t, fmt.Sprintf("The name of this file contains %d character(s).\n", i+1), string(f))
+			}
+		})
+	}
 }

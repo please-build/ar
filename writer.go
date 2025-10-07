@@ -49,6 +49,9 @@ type Writer struct {
 	// w is the underlying io.Writer to which the archive file is written.
 	w io.Writer
 
+	// variant is the variant of the ar file format used by the archive.
+	variant Variant
+
 	// closed is true if Close has been called on this Writer, or false if it has not.
 	closed bool
 
@@ -56,22 +59,32 @@ type Writer struct {
 	// false if it has not yet.
 	wroteHeader bool
 
-	// nb is the number of bytes that have not yet been written (via Write) since the most
-	// recent call to WriteHeader.
+	// wroteStringTable is true if the string table has been written to the underlying io.Writer,
+	// or false if it has not yet.
+	//
+	// This field's value is only meaningful when variant is GNU - BSD-style archives do not
+	// contain a string table.
+	wroteStringTable bool
+
+	// nb is the number of bytes that have been written via Write since the most recent call to
+	// WriteHeader.
 	nb int64
 
-	// longFilenames is a map representation of the archive's string table, which maps archive
-	// members' file names that are over 15 bytes long to the byte offset of that file name within
-	// the string table. It is only effective for Writers that write GNU-format archives -
-	// BSD-style archives do not contain a string table.
-	longFilenames map[string]int
+	// stringTable is the archive's string table, which maps archive members' file names that are
+	// over 15 bytes long to the byte offset of that file name within the string table.
+	//
+	// This field's value is only meaningful when variant is GNU - BSD-style archives do not
+	// contain a string table.
+	stringTable map[string]int
 }
 
-// NewWriter creates a new Writer that writes an ar archive to an underlying io.Writer.
-func NewWriter(w io.Writer) *Writer {
+// NewWriter creates a new Writer that writes an ar archive of the given variant to an underlying
+// io.Writer.
+func NewWriter(w io.Writer, variant Variant) *Writer {
 	return &Writer{
-		w:             w,
-		longFilenames: map[string]int{},
+		w:           w,
+		variant:     variant,
+		stringTable: map[string]int{},
 	}
 }
 
@@ -157,17 +170,30 @@ func (aw *Writer) writeHeader() error {
 	return nil
 }
 
-// WriteGlobalHeaderForLongFiles writes GNU-style entries to handle "long" filenames (i.e. ones over
-// 16 chars).
-func (aw *Writer) WriteGlobalHeaderForLongFiles(filenames []string) error {
+// WriteStringTable writes a string table for GNU-format archives.
+//
+// The string table is a list of file names of archive members that are more than 15 bytes long
+// (although file names of 15 bytes or less may also be stored). It is the first member of a GNU-format
+// archive (or the second, if the archive also contains a symbol table), which means that this function
+// must be called before the first call to WriteHeader if the archive is to contain members with a file
+// name length of more than 15 bytes.
+//
+// The BSD variant of the ar file format has no concept of string tables, and this function has no
+// effect if this Writer is writing a BSD-format archive.
+func (aw *Writer) WriteStringTable(filenames []string) error {
+	if aw.variant != GNU {
+		return nil
+	}
+	if aw.wroteStringTable {
+		return errors.New("ar: wrote string table twice")
+	}
+	aw.wroteStringTable = true
 	var data []byte
 	for _, filename := range filenames {
-		if len(filename) > 16 {
-			aw.longFilenames[filename] = len(data)
-			data = append(data, []byte(filename)...)
-			data = append(data, '/')
-			data = append(data, '\n')
-		}
+		aw.stringTable[filename] = len(data)
+		data = append(data, []byte(filename)...)
+		data = append(data, '/')
+		data = append(data, '\n')
 	}
 	if len(data) == 0 {
 		return nil
@@ -187,25 +213,38 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	header := make([]byte, HEADER_BYTE_SIZE)
 	s := slicer(header)
 
-	var bsdName []byte
-	if len(hdr.Name) > 16 {
-		idx, present := aw.longFilenames[hdr.Name]
-		if present {
-			// already known, write GNU-style name
-			aw.string(s.next(16), "/"+strconv.Itoa(idx))
-		} else {
-			// not known, assume they want BSD-style names.
-			bsdName = append([]byte(hdr.Name), 0, 0) // seems to pad with at least two nulls
-			if len(bsdName)%2 != 0 {
-				bsdName = append(bsdName, 0) // pad out to an even number
+	switch aw.variant {
+	case GNU:
+		// "/" is always appended to GNU-variant file names, which means that any file names over 15 bytes
+		// long must be stored in the string table, even though there's 16 bytes of space in the header
+		// for the file name.
+		if len(hdr.Name) > 15 {
+			if !aw.wroteStringTable {
+				return errors.New("ar: missing string table")
 			}
-			aw.string(s.next(16), "#1/"+strconv.Itoa(len(bsdName)))
-			// These seem to pad with two nulls?
-			aw.nb += int64(len(bsdName))
-			hdr.Size += int64(len(bsdName))
+			offset, present := aw.stringTable[hdr.Name]
+			if !present {
+				return fmt.Errorf("ar: missing string table entry for file name '%s'", hdr.Name)
+			}
+			aw.string(s.next(16), "/"+strconv.Itoa(offset))
+		} else {
+			aw.string(s.next(16), hdr.Name)
 		}
-	} else {
-		aw.string(s.next(16), hdr.Name)
+	case BSD:
+		if len(hdr.Name) > 16 {
+			// The ar file format requires data sections to be an even number of bytes long. Since the real
+			// file name is being prepended to the data section, pad it with one null byte if it has an odd
+			// length (the padding byte will be ignored when read). Write will take care of the padding for
+			// the real data section, ensuring that the data section has an even length overall.
+			if len(hdr.Name)%2 == 1 {
+				hdr.Name += "\x00"
+			}
+			aw.string(s.next(16), "#1/"+strconv.Itoa(len(hdr.Name)))
+			aw.nb += int64(len(hdr.Name))
+			hdr.Size += int64(len(hdr.Name))
+		} else {
+			aw.string(s.next(16), hdr.Name)
+		}
 	}
 	aw.numeric(s.next(12), hdr.ModTime.Unix())
 	aw.numeric(s.next(6), int64(hdr.Uid))
@@ -215,11 +254,15 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	aw.string(s.next(2), "`\n")
 
 	_, err := aw.write(header)
-
-	if err == nil && bsdName != nil {
-		// BSD-style writes the name before the data section
-		_, err = aw.Write(bsdName)
+	if err != nil {
+		return fmt.Errorf("ar: write member header: %w", err)
 	}
 
-	return err
+	if aw.variant == BSD && len(hdr.Name) > 16 {
+		if _, err = aw.Write([]byte(hdr.Name)); err != nil {
+			return fmt.Errorf("ar: write BSD-variant file name: %w", err)
+		}
+	}
+
+	return nil
 }

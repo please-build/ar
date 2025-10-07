@@ -7,3 +7,7 @@ GoTool = //third_party/go:toolchain|go
 Stdlib = //third_party/go:std
 ImportPath = github.com/please-build/ar
 RequireLicences = true
+
+[Build]
+PassUnsafeEnv = CI
+PassUnsafeEnv = RUNNER_OS
