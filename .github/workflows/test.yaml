@@ -4,10 +4,18 @@ on:
   - pull_request
 jobs:
   test:
-    name: Run tests
-    runs-on: ubuntu-latest
+    name: Run tests (${{ matrix.name }})
+    runs-on: ${{ matrix.runner }}
     steps:
       - name: Check out code
         uses: actions/checkout@v5
       - name: Run tests
-        run: ./pleasew test
+        run: ./pleasew test --detailed
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu
+            runner: ubuntu-24.04
+          - name: macOS
+            runner: macos-15
