@@ -36,7 +36,7 @@ import (
 func TestGlobalHeaderWrite(t *testing.T) {
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
-	err = writer.Close()
+	err := writer.Close()
 	require.NoError(t, err)
 	assert.Equal(t, []byte("!<arch>\n"), buf.Bytes())
 }
