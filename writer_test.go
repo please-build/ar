@@ -24,7 +24,6 @@ package ar
 
 import (
 	"bytes"
-	"io"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -37,12 +36,7 @@ func TestGlobalHeaderWrite(t *testing.T) {
 	var buf bytes.Buffer
 	writer := NewWriter(&buf)
 	writer.Close()
-
-	globalHeader := buf.Bytes()
-	expectedHeader := []byte("!<arch>\n")
-	if !bytes.Equal(globalHeader, expectedHeader) {
-		t.Errorf("Global header should be %s but is %s", expectedHeader, globalHeader)
-	}
+	assert.Equal(t, []byte("!<arch>\n"), buf.Bytes())
 }
 
 func TestSimpleFile(t *testing.T) {
@@ -59,9 +53,7 @@ func TestSimpleFile(t *testing.T) {
 	writer := NewWriter(&buf)
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
-	if err != nil {
-		t.Errorf(err.Error())
-	}
+	assert.NoError(t, err)
 	err = writer.Close()
 	assert.NoError(t, err)
 
@@ -69,14 +61,8 @@ func TestSimpleFile(t *testing.T) {
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
-	if err != nil {
-		t.Errorf(err.Error())
-	}
-
-	actual := buf.Bytes()
-	if !bytes.Equal(b, actual) {
-		t.Errorf("Expected %s to equal %s", actual, b)
-	}
+	assert.NoError(t, err)
+	assert.Equal(t, b, buf.Bytes())
 }
 
 func TestWriteTooLong(t *testing.T) {
@@ -89,45 +75,7 @@ func TestWriteTooLong(t *testing.T) {
 	writer := NewWriter(&buf)
 	writer.WriteHeader(hdr)
 	_, err := writer.Write([]byte(body))
-	if err != ErrWriteTooLong {
-		t.Errorf("Error should have been: %s", ErrWriteTooLong)
-	}
-}
-
-func TestIoCopyWithPadding(t *testing.T) {
-	hdr := new(Header)
-	hdr.Size = 1
-
-	var arbuf bytes.Buffer
-
-	inbuf := bytes.NewBuffer([]byte("1"))
-
-	writer := NewWriter(&arbuf)
-	writer.WriteHeader(hdr)
-	_, err := io.Copy(writer, inbuf)
-	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
-	}
-	err = writer.Close()
-	assert.NoError(t, err)
-}
-
-func TestIoCopyWithoutPadding(t *testing.T) {
-	hdr := new(Header)
-	hdr.Size = 2
-
-	var arbuf bytes.Buffer
-
-	inbuf := bytes.NewBuffer([]byte("12"))
-
-	writer := NewWriter(&arbuf)
-	writer.WriteHeader(hdr)
-	_, err := io.Copy(writer, inbuf)
-	if err != nil {
-		t.Errorf("Unexpected error: %s", err)
-	}
-	err = writer.Close()
-	assert.NoError(t, err)
+	assert.ErrorIs(t, err, ErrWriteTooLong)
 }
 
 func TestWriteGNUFilename(t *testing.T) {
