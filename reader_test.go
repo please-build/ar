@@ -55,10 +55,11 @@ func TestReadHeader(t *testing.T) {
 func TestLongFilenames(t *testing.T) {
 	for _, tc := range []struct {
 		Description string
+		Variant     Variant
 		ArchivePath string
 	}{
-		{"BSD format", "./test_data/long_filenames_bsd.a"},
-		{"GNU format", "./test_data/long_filenames_gnu.a"},
+		{"BSD format", BSD, "./test_data/long_filenames_bsd.a"},
+		{"GNU format", GNU, "./test_data/long_filenames_gnu.a"},
 	} {
 		t.Run(tc.Description, func(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
@@ -66,6 +67,7 @@ func TestLongFilenames(t *testing.T) {
 			defer f.Close()
 			reader, err := NewReader(f)
 			require.NoError(t, err)
+			assert.Equal(t, tc.Variant, reader.Variant())
 			for i := 1; i <= 20; i++ {
 				t.Run("File "+strconv.Itoa(i), func(t *testing.T) {
 					hdr, err := reader.Next()

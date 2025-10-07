@@ -143,6 +143,11 @@ func (rd *Reader) skipUnread() error {
 	return err
 }
 
+// Variant returns the ar file format variant used by the archive file.
+func (rd *Reader) Variant() Variant {
+	return rd.variant
+}
+
 // Next skips to the next file in the archive file.
 // Returns a Header which contains the metadata about the
 // file in the archive. io.EOF is returned at the end of the input.
