@@ -245,6 +245,9 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 		} else {
 			aw.string(s.next(16), hdr.Name)
 		}
+	default:
+		// This should be unreachable.
+		return errors.New("ar: unsupported variant")
 	}
 	aw.numeric(s.next(12), hdr.ModTime.Unix())
 	aw.numeric(s.next(6), int64(hdr.Uid))
