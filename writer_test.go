@@ -59,7 +59,7 @@ func TestSimpleFile(t *testing.T) {
 	err = writer.Close()
 	require.NoError(t, err)
 
-	f, _ := os.Open("./fixtures/hello.a")
+	f, _ := os.Open("./test_data/hello.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
@@ -99,7 +99,7 @@ func TestWriteGNUFilename(t *testing.T) {
 	err = writer.Close()
 	require.NoError(t, err)
 
-	f, _ := os.Open("./fixtures/gnu_long_filename.a")
+	f, _ := os.Open("./test_data/gnu_long_filename.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
@@ -127,7 +127,7 @@ func TestWriteBSDFilename(t *testing.T) {
 	err = writer.Close()
 	require.NoError(t, err)
 
-	f, _ := os.Open("./fixtures/bsd_long_filename.a")
+	f, _ := os.Open("./test_data/bsd_long_filename.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)
@@ -138,7 +138,7 @@ func TestWriteBSDFilename(t *testing.T) {
 }
 
 func TestWriteBSDFilename2(t *testing.T) {
-	body, err := ioutil.ReadFile("./fixtures/XmlTestReporter.o")
+	body, err := ioutil.ReadFile("./test_data/XmlTestReporter.o")
 	require.NoError(t, err)
 	hdr := &Header{}
 	hdr.ModTime = time.Unix(1542271382, 0)
@@ -156,7 +156,7 @@ func TestWriteBSDFilename2(t *testing.T) {
 	err = writer.Close()
 	require.NoError(t, err)
 
-	f, _ := os.Open("./fixtures/bsd_long_filename_2.a")
+	f, _ := os.Open("./test_data/bsd_long_filename_2.a")
 	defer f.Close()
 
 	b, err := ioutil.ReadAll(f)

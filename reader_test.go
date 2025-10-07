@@ -36,7 +36,7 @@ import (
 )
 
 func TestReadHeader(t *testing.T) {
-	f, err := os.Open("./fixtures/hello.a")
+	f, err := os.Open("./test_data/hello.a")
 	require.NoError(t, err)
 	defer f.Close()
 
@@ -57,8 +57,8 @@ func TestLongFilenames(t *testing.T) {
 		Description string
 		ArchivePath string
 	}{
-		{"BSD format", "./fixtures/long_filenames_bsd.a"},
-		{"GNU format", "./fixtures/long_filenames_gnu.a"},
+		{"BSD format", "./test_data/long_filenames_bsd.a"},
+		{"GNU format", "./test_data/long_filenames_gnu.a"},
 	} {
 		t.Run(tc.Description, func(t *testing.T) {
 			f, err := os.Open(tc.ArchivePath)
