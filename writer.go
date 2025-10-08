@@ -81,7 +81,7 @@ func (aw *Writer) numeric(b []byte, x int64) {
 }
 
 func (aw *Writer) octal(b []byte, x int64) {
-	s := "100" + strconv.FormatInt(x, 8)
+	s := strconv.FormatInt(x, 8)
 	for len(s) < len(b) {
 		s = s + " "
 	}
