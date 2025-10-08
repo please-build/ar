@@ -26,6 +26,7 @@ func TestWriteTooLong(t *testing.T) {
 	body := "Hello world!\n"
 
 	hdr := new(Header)
+	hdr.Name = "hello.txt"
 	hdr.Size = 1
 
 	var buf bytes.Buffer

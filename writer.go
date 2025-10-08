@@ -196,6 +196,10 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	header := make([]byte, HEADER_BYTE_SIZE)
 	s := slicer(header)
 
+	if len(hdr.Name) == 0 {
+		return errors.New("ar: empty file name")
+	}
+
 	switch aw.variant {
 	case GNU:
 		// "/" is always appended to GNU-variant file names, which means that any file names over 15 bytes
