@@ -183,7 +183,7 @@ func (aw *Writer) WriteStringTable(filenames []string) error {
 		return nil
 	}
 	// need at least one long filename
-	if err := aw.WriteHeader(&Header{Name: "//", Mode: 0420, Size: int64(len(data))}); err != nil {
+	if err := aw.WriteHeader(&Header{Name: "//", Size: int64(len(data))}); err != nil {
 		return err
 	}
 	_, err := io.Copy(aw, bytes.NewReader(data))
@@ -256,7 +256,13 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	aw.numeric(s.next(12), hdr.ModTime.Unix())
 	aw.numeric(s.next(6), int64(hdr.Uid))
 	aw.numeric(s.next(6), int64(hdr.Gid))
-	aw.octal(s.next(8), hdr.Mode)
+	// Only headers representing real files require file mode values - write an empty file mode field
+	// for the string table in GNU-variant archives.
+	if aw.variant == GNU && hdr.Name == "//" {
+		aw.string(s.next(8), "")
+	} else {
+		aw.octal(s.next(8), hdr.Mode)
+	}
 	aw.numeric(s.next(10), hdr.Size)
 	aw.string(s.next(2), "`\n")
 
