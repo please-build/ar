@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -218,7 +219,14 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 			aw.string(s.next(16), hdr.Name)
 		}
 	case BSD:
-		if len(hdr.Name) > 16 {
+		// In the BSD variant of the ar format, file names that won't fit in the file name header are
+		// prepended to the data section; the length of the file name is inserted into the field in its
+		// place, so the reader knows how much to read from the front of the data section. Because
+		// BSD-variant file name header fields have no trailing character delimiting the file name from
+		// the spaces in the field padding, also do this for file names containing spaces (even when the
+		// spaces occur before the end of the file name, in case the reader reads the file name header
+		// byte by byte and stops when it encounters the first space).
+		if len(hdr.Name) > 16 || strings.ContainsRune(hdr.Name, ' ') {
 			// The ar file format requires data sections to be an even number of bytes long. Since the real
 			// file name is being prepended to the data section, pad it with one null byte if it has an odd
 			// length (the padding byte will be ignored when read). Write will take care of the padding for
