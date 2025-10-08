@@ -216,7 +216,7 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 			}
 			aw.string(s.next(16), "/"+strconv.Itoa(offset))
 		} else {
-			aw.string(s.next(16), hdr.Name)
+			aw.string(s.next(16), hdr.Name+"/")
 		}
 	case BSD:
 		// In the BSD variant of the ar format, file names that won't fit in the file name header are
