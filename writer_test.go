@@ -122,7 +122,7 @@ func TestWriteValidArchive(t *testing.T) {
 			err = f.Close()
 			require.NoError(t, err)
 
-			out, err = exec.Command(tc.ArPath, append(tc.ArArgs, "-x", tmp)...).CombinedOutput()
+			out, err := exec.Command(tc.ArPath, append(tc.ArArgs, "-x", tmp)...).CombinedOutput()
 			if !assert.NoError(t, err) {
 				t.Fatalf("%s output:\n%s\n", tc.ArPath, out)
 			}
