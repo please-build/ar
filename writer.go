@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"time"
 )
 
 var (
 	ErrWriteTooLong = errors.New("ar: write too long")
+
+	// Epoch is the Unix epoch, 00:00:00 UTC on 1970-01-01.
+	Epoch = time.Unix(0, 0)
 )
 
 // Writer provides sequential writing of an ar archive.
@@ -227,6 +231,11 @@ func (aw *Writer) WriteHeader(hdr *Header) error {
 	default:
 		// This should be unreachable.
 		return errors.New("ar: unsupported variant")
+	}
+	// Modification times before the Unix epoch cannot meaningfully be represented in ar headers, which
+	// store times as stringified Unix times - ensure the modification time is at least the epoch.
+	if hdr.ModTime.Before(Epoch) {
+		hdr.ModTime = Epoch
 	}
 	aw.numeric(s.next(12), hdr.ModTime.Unix())
 	aw.numeric(s.next(6), int64(hdr.Uid))
