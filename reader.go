@@ -283,7 +283,7 @@ func (rd *Reader) Read(b []byte) (n int, err error) {
 	if int64(len(b)) > rd.nb {
 		b = b[0:rd.nb]
 	}
-	n, err = rd.r.Read(b)
+	n, err = io.ReadFull(rd.r, b)
 	rd.nb -= int64(n)
 
 	return
